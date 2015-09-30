@@ -14,6 +14,8 @@ import org.apache.shiro.authz.AuthorizationInfo;
 import org.apache.shiro.authz.SimpleAuthorizationInfo;
 import org.apache.shiro.realm.AuthorizingRealm;
 import org.apache.shiro.subject.PrincipalCollection;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import str.shiro.auth.AuthInfo;
 import str.shiro.service.UserService;
@@ -23,6 +25,8 @@ import str.shiro.service.UserService;
  *
  */
 public class StrUserRealm extends AuthorizingRealm {
+  
+  private static final transient Logger log = LoggerFactory.getLogger(StrUserRealm.class);
   
   private UserService userService;
   
@@ -42,13 +46,15 @@ public class StrUserRealm extends AuthorizingRealm {
 
   @Override
   protected AuthenticationInfo doGetAuthenticationInfo(AuthenticationToken token) throws AuthenticationException {
+    log.debug("In doGetAuthenticationInfo");
     String username = (String) token.getPrincipal();
-    String password = (String) token.getCredentials();
+    char[] password = (char[]) token.getCredentials();
     
     SimpleAuthenticationInfo info = null;
-    AuthInfo authInfo = userService.authenticate(username, password);
+    log.debug("Looking up user and testing credentials");
+    AuthInfo authInfo = userService.authenticate(username, new String(password));
     if(authInfo.isAuthenticated()) {
-      info = new SimpleAuthenticationInfo(username, password.toCharArray(), getName());
+      info = new SimpleAuthenticationInfo(username, password, getName());
     } else {
       throw new AuthenticationException(authInfo.getMessage().getMessage(), authInfo.getMessage().getException());
     }
@@ -57,7 +63,7 @@ public class StrUserRealm extends AuthorizingRealm {
 
   @Override
   protected AuthorizationInfo doGetAuthorizationInfo(PrincipalCollection principals) {
-    if (principals != null) {
+    if (principals == null) {
       throw new AuthorizationException("Principal cannot be null.");
     }
     
