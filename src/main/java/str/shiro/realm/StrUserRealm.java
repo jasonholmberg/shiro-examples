@@ -52,6 +52,8 @@ public class StrUserRealm extends AuthorizingRealm {
     
     SimpleAuthenticationInfo info = null;
     log.debug("Looking up user and testing credentials");
+    
+    // FIXME Don't need to do this auth check Shiro will compare the password for me.
     AuthInfo authInfo = userService.authenticate(username, new String(password));
     if(authInfo.isAuthenticated()) {
       info = new SimpleAuthenticationInfo(username, password, getName());
