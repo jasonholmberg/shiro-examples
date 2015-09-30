@@ -3,7 +3,7 @@
  */
 package str.shiro.realm;
 
-import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.*;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 import static org.mockito.Matchers.eq;
@@ -23,6 +23,8 @@ import org.apache.shiro.mgt.DefaultSecurityManager;
 import org.apache.shiro.mgt.SecurityManager;
 import org.apache.shiro.realm.Realm;
 import org.apache.shiro.subject.Subject;
+import org.apache.shiro.util.ThreadContext;
+import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 import org.mockito.Mock;
@@ -50,6 +52,13 @@ public class StrUserRealmTest {
     MockitoAnnotations.initMocks(this);
   }
 
+  @After
+  public void tearDown() {
+    // Need to do this to make sure each test is run fresh.
+    ThreadContext.unbindSubject();
+    ThreadContext.unbindSecurityManager();
+  }
+  
   @Test
   public void authSuccess() {
     final String username = "batman";
@@ -102,6 +111,27 @@ public class StrUserRealmTest {
     System.out.println(currentUser.getPrincipal());
     currentUser.hasRole(Roles.admin.name());
   }
+  
+  @Test
+  public void authFailViaSecurutyManager() {
+    final String username = "batman";
+    final String password = "bad-password";
+    
+    UserService mockUserService = new MockUserService();
+    Realm realm = new StrUserRealm(mockUserService);
+    SecurityManager securityManager = new DefaultSecurityManager(realm);
+    SecurityUtils.setSecurityManager(securityManager);
+    Subject currentUser = SecurityUtils.getSubject();
+    UsernamePasswordToken token = new UsernamePasswordToken(username, password);
+    token.setRememberMe(true);
+    try {
+    currentUser.login(token);
+    } catch (AuthenticationException e) {
+      assertFalse(currentUser.isAuthenticated());
+      assertEquals(AuthMessage.MSG_FAIL, e.getMessage());
+    }
+  }
+  
   
   class MockUserService implements UserService {
     
