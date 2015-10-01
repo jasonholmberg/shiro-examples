@@ -11,6 +11,7 @@ import str.shiro.enums.Status;
  */
 public interface User {
   int getId();
+  String getDob();
   String getFirstname();
   String getLastname();
   String getUsername();
