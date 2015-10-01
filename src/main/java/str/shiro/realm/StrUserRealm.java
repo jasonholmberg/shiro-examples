@@ -75,7 +75,9 @@ public class StrUserRealm extends AuthorizingRealm {
     
     try {
       Set<String> roles = userService.getUserRoles(username);
+      log.debug("{} : Roles -> {}",username,roles.toString());
       Set<String> permissions = userService.getPermissions(username);
+      log.debug("{} : Permissions -> {}",username,permissions.toString());
       info = new SimpleAuthorizationInfo(roles);
       info.setStringPermissions(permissions);
     } catch (Exception e) {

@@ -5,9 +5,9 @@ package str.shiro.realm;
 
 import static org.junit.Assert.*;
 import static org.mockito.Matchers.eq;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.*;
 
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -17,19 +17,22 @@ import org.apache.shiro.authc.AuthenticationException;
 import org.apache.shiro.authc.AuthenticationInfo;
 import org.apache.shiro.authc.AuthenticationToken;
 import org.apache.shiro.authc.UsernamePasswordToken;
+import org.apache.shiro.cache.MemoryConstrainedCacheManager;
 import org.apache.shiro.mgt.DefaultSecurityManager;
 import org.apache.shiro.mgt.SecurityManager;
+import org.apache.shiro.realm.AuthorizingRealm;
 import org.apache.shiro.realm.Realm;
 import org.apache.shiro.subject.Subject;
 import org.apache.shiro.util.ThreadContext;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
-import org.mockito.Mock;
-import org.mockito.MockitoAnnotations;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import str.shiro.auth.AuthInfo;
 import str.shiro.auth.AuthMessage;
+import str.shiro.enums.Status;
 import str.shiro.model.User;
 import str.shiro.service.UserService;
 
@@ -39,7 +42,7 @@ import str.shiro.service.UserService;
  */
 public class StrUserRealmTest {
 
-  @Mock
+  private static final Logger log = LoggerFactory.getLogger(StrUserRealmTest.class); 
   private UserService userService;
 
   /**
@@ -47,7 +50,7 @@ public class StrUserRealmTest {
    */
   @Before
   public void setUp() throws Exception {
-    MockitoAnnotations.initMocks(this);
+    userService = spy(new MockUserService());
   }
 
   @After
@@ -58,14 +61,15 @@ public class StrUserRealmTest {
   }
   
   @Test
-  public void authSuccess() {
-    final String username = "batman";
-    final String password = "b4tg1rl";
+  public void authcSuccess() {
+    final String username = Users.batman.username;
+    final String password = Users.batman.password;
     AuthenticationToken token = mock(AuthenticationToken.class);
     when(token.getPrincipal()).thenReturn(username);
     when(token.getCredentials()).thenReturn(password.toCharArray());
     
-    when(userService.authenticate(eq(username), eq(password))).thenReturn(new AuthInfo(true, new AuthMessage(AuthMessage.MSG_SUCCESS, null)));
+//    when(userService.authenticate(eq(username), eq(password))).thenReturn(new AuthInfo(true, new AuthMessage(AuthMessage.MSG_SUCCESS, null)));
+    doReturn(new AuthInfo(true, new AuthMessage(AuthMessage.MSG_SUCCESS, null))).when(userService).authenticate(eq(username), eq(password));
     
     Realm realm = new StrUserRealm(userService);
     realm.getAuthenticationInfo(token);
@@ -77,15 +81,15 @@ public class StrUserRealmTest {
   }
 
   @Test(expected = AuthenticationException.class)
-  public void authFail() {
-    final String username = "batman";
-    final String password = "b4tg1rl";
+  public void authcFail() {
+    final String username = Users.batman.username;
+    final String password = Users.batman.password;
     AuthenticationToken token = mock(AuthenticationToken.class);
     when(token.getPrincipal()).thenReturn(username);
     when(token.getCredentials()).thenReturn(password.toCharArray());
     
-    when(userService.authenticate(eq(username), eq(password))).thenReturn(new AuthInfo(false, new AuthMessage(AuthMessage.MSG_FAIL, new Exception())));
-    
+//    when(userService.authenticate(eq(username), eq(password))).thenReturn(new AuthInfo(false, new AuthMessage(AuthMessage.MSG_FAIL, new Exception())));
+    doReturn(new AuthInfo(false, new AuthMessage(AuthMessage.MSG_FAIL, new Exception()))).when(userService).authenticate(eq(username), eq(password));
     Realm realm = new StrUserRealm(userService);
     realm.getAuthenticationInfo(token);
     
@@ -93,57 +97,91 @@ public class StrUserRealmTest {
   }
   
   @Test
-  public void authViaSecurutyManager() {
-    final String username = "batman";
-    final String password = "b4tg1rl";
+  public void authcViaSecurutyManager() {
+    final String username = Users.batman.username;
+    final String password = Users.batman.password;
     
-    UserService mockUserService = new MockUserService();
-    Realm realm = new StrUserRealm(mockUserService);
-    SecurityManager securityManager = new DefaultSecurityManager(realm);
-    SecurityUtils.setSecurityManager(securityManager);
-    Subject currentUser = SecurityUtils.getSubject();
-    UsernamePasswordToken token = new UsernamePasswordToken(username, password);
-    token.setRememberMe(true);
-    currentUser.login(token);
+    Subject currentUser = shiroAuthcHelper(username, password);
     assertTrue(currentUser.isAuthenticated());
     System.out.println(currentUser.getPrincipal());
     currentUser.hasRole(Roles.admin.name());
   }
   
   @Test
-  public void authFailViaSecurutyManager() {
-    final String username = "batman";
+  public void authcFailViaSecurutyManager() {
+    final String username = Users.batman.username;
     final String password = "bad-password";
     
-    UserService mockUserService = new MockUserService();
-    Realm realm = new StrUserRealm(mockUserService);
+    try {
+      shiroAuthcHelper(username, password);
+    } catch (AuthenticationException e) {
+      assertFalse(SecurityUtils.getSubject().isAuthenticated());
+      assertEquals(AuthMessage.MSG_FAIL, e.getMessage());
+    }
+  }
+  
+  @Test
+  public void authzTest() {
+    Subject currentUser = shiroAuthcHelper(Users.batman.username, Users.batman.password);
+    assertTrue(currentUser.hasRole(Roles.admin.name()));
+    assertTrue(currentUser.isPermitted(Perms.create.name()));
+    
+    currentUser.logout();
+    currentUser = shiroAuthcHelper(Users.robin.username, Users.robin.password);
+    assertFalse(currentUser.hasRole(Roles.admin.name()));
+    assertFalse(currentUser.isPermitted(Perms.delete.name()));
+  }
+  
+  @Test
+  public void authzTestInServiceSuccess() {
+    Subject batman = shiroAuthcHelper(Users.batman.username, Users.batman.password);
+    User user = userService.findUser(Users.robin.username);
+    assertNotNull(user);
+    assertEquals(Users.robin.username, user.getUsername());
+  }
+  
+  @Test
+  public void authzTestInServiceInstanceLevel() {
+    Subject robin = shiroAuthcHelper(Users.robin.username, Users.robin.password);
+    List<User> users = userService.findUsers();
+    assertNotNull(users);
+    log.debug("Users: {}",users.toString());
+    assertTrue(users.size() == 2);
+  }
+  
+  Subject shiroAuthcHelper(final String username, final String password) {
+    AuthorizingRealm realm = new StrUserRealm(userService);
+    realm.setCacheManager(new MemoryConstrainedCacheManager());
     SecurityManager securityManager = new DefaultSecurityManager(realm);
     SecurityUtils.setSecurityManager(securityManager);
     Subject currentUser = SecurityUtils.getSubject();
     UsernamePasswordToken token = new UsernamePasswordToken(username, password);
     token.setRememberMe(true);
-    try {
     currentUser.login(token);
-    } catch (AuthenticationException e) {
-      assertFalse(currentUser.isAuthenticated());
-      assertEquals(AuthMessage.MSG_FAIL, e.getMessage());
-    }
+    return currentUser;
   }
-  
   
   class MockUserService implements UserService {
     
     
     @Override
     public User findUser(String username) {
-      // TODO Auto-generated method stub
+      User user = new MockUser(Users.valueOf(username));
+      if(SecurityUtils.getSubject().isPermitted("user:read:"+user.getId())) {
+        return user;
+      }
       return null;
     }
 
     @Override
     public List<User> findUsers() {
-      // TODO Auto-generated method stub
-      return null;
+      List<User> users = new ArrayList<>();
+      for (Users u : Users.values()) {
+        if(SecurityUtils.getSubject().isPermitted("user:read:"+u.id)) {
+          users.add(new MockUser(u));
+        }
+      }
+      return users;
     }
 
     @Override
@@ -170,27 +208,89 @@ public class StrUserRealmTest {
     public Set<String> getPermissions(String username) {
       Set<String> permissions = new HashSet<>();
       for (Roles role : UsersRoles.valueOf(username).roles) {
-        for (Perms perm : RolesPerms.valueOf(role.name()).perms) {
-          permissions.add(perm.name());
+        for (String perm : RolesPerms.valueOf(role.name()).perms) {
+          permissions.add(perm);
         }
       }
       
-      for(Perms perm : UserPerms.valueOf(username).perms) {
-        permissions.add(perm.name());
+      for(String perm : UserPerms.valueOf(username).perms) {
+        permissions.add(perm);
       }
       return permissions;
     }
     
   }
   
-  public enum Users {
-    batman("b4tg1rl"),
-    robin("b4tg1rl"),
-    joker("h@rl3y");
+  class MockUser implements User {
+
+    final int id;
+    final String firstname;
+    final String lastname;
+    final String username;
+    final byte[] password;
+    final Status status;
     
+    public MockUser(Users user) {
+      this.id = user.id;
+      this.firstname = user.name();
+      this.lastname = user.lastname;
+      this.username = user.name();
+      this.password = user.password.getBytes();
+      this.status = user.status;
+    }
+    
+    @Override
+    public int getId() {
+      return id;
+    }
+    
+    @Override
+    public String getFirstname() {
+      return firstname;
+    }
+
+    @Override
+    public String getLastname() {
+      return lastname;
+    }
+
+    @Override
+    public String getUsername() {
+      return username;
+    }
+
+    @Override
+    public byte[] getPassword() {
+      return password;
+    }
+
+    @Override
+    public Status getStatus() {
+      return status;
+    }
+    
+    @Override
+    public String toString() {
+      return username;
+    }
+  }
+  
+  public enum Users {
+    batman(1,"b4tg1rl","the Caped Crusader", "batman",Status.active),
+    robin(2, "b4tg1rl","the Boy Wonder", "robin", Status.active),
+    joker(3,"h@rl3y","the Villian", "jerome", Status.locked);
+    
+    public int id;
     public String password;
-    Users(String password) {
+    public String lastname;
+    public String username;
+    public Status status;
+    Users(int id, String password, String lastname, String username, Status status) {
+      this.id = id;
       this.password = password;
+      this.lastname = lastname;
+      this.username = username;
+      this.status = status;
     }
   };
   
@@ -218,38 +318,42 @@ public class StrUserRealmTest {
   
   public enum Perms {
     read,write,create,delete;
-    public static Perms[] all() {
-      return Perms.values();
+    public static String[] all() {
+      List<String> perms = new ArrayList<>(Perms.values().length);
+      for(Perms perm : Perms.values()) {
+        perms.add(perm.name());
+      }
+      return perms.toArray(new String[Perms.values().length]);
     }
   }
   
   public enum RolesPerms {
     admin(Perms.all()),
-    hero(new Perms[] {Perms.read,Perms.write}),
-    user(Perms.read),
-    villian(new Perms[] {});
+    hero(Perms.read.name(), Perms.write.name()),
+    user(Perms.read.name()),
+    villian(new String[] {});
     
-    public Perms[] perms;
-    RolesPerms(Perms... perms) {
+    public String[] perms;
+    RolesPerms(String... perms) {
       this.perms = perms;
     }
     
-    public Perms[] getPerms(Roles role) {
+    public String[] getPerms(Roles role) {
       return valueOf(role.name()).perms;
     }
   }
   
   public enum UserPerms {
-    batman(Perms.all()),
-    robin(Perms.read,Perms.write,Perms.create),
+    batman(Perms.read.name(),Perms.write.name(),Perms.create.name(),Perms.delete.name(),"user:*"),
+    robin(Perms.read.name(),Perms.write.name(),Perms.create.name(),"user:read:2,3"),
     joker(Perms.all());
     
-    public Perms[] perms;
-    UserPerms(Perms... perms) {
+    public String[] perms;
+    UserPerms(String... perms) {
       this.perms = perms;
     }
     
-    public Perms[] getPerms(Roles role) {
+    public String[] getPerms(Roles role) {
       return valueOf(role.name()).perms;
     }
   }
