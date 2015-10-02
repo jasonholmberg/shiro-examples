@@ -5,11 +5,8 @@ package str.shiro.model;
 
 import str.shiro.data.Users;
 import str.shiro.enums.Status;
-import str.shiro.governed.Governed;
-import str.shiro.governed.GovernedObject;
-import str.shiro.governed.Governors;
 
-public class MockUser extends GovernedObject implements User {
+public class MockUser implements User {
 
   final int id;
   final String dob;
@@ -35,10 +32,8 @@ public class MockUser extends GovernedObject implements User {
   }
   
   @Override
-  @Governed(Governors.mask)
   public String getDob() {
-    // TODO Auto-generated method stub
-    return (String) govern(dob);
+    return dob;
   }
   
   @Override
